@@ -1,0 +1,8 @@
+fastapi 
+uvicorn 
+pydantic 
+python-multipart 
+pdfplumber 
+pandas 
+google-cloud-vision 
+pillow
