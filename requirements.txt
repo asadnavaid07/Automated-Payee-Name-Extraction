@@ -6,3 +6,5 @@ pdfplumber
 pandas 
 google-cloud-vision 
 pillow
+openai
+dotenv
