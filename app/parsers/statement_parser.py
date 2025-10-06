@@ -21,17 +21,14 @@ class StatementParser:
         pass
 
     def _prepare_column_analysis(self, df: pd.DataFrame, max_sample_rows: int = 3) -> List[Dict[str, Any]]:
-        """
-        Prepare complete column analysis with position tracking for duplicate names.
-        Returns list of column info with index, name, and sample values.
-        """
+
         column_info = []
         
         for col_idx, col_name in enumerate(df.columns):
-            # Get sample values from this specific column by position
+
             sample_values = []
             for row_idx in range(min(max_sample_rows, len(df))):
-                value = df.iloc[row_idx, col_idx]  # Access by position, not name
+                value = df.iloc[row_idx, col_idx]  
                 sample_values.append(str(value) if pd.notna(value) else "")
             
             column_info.append({

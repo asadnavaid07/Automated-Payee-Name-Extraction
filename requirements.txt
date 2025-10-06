@@ -8,4 +8,4 @@ google-cloud-vision
 pillow
 dotenv
 google-generativeai
-
+google-cloud-vision
