@@ -38,8 +38,8 @@ def run_ocr(front_path: str, check_number: str) -> Optional[dict]:
 def main(start_check: int, end_check: int, account_name_contains: str = "CHECKING", parsed_csv_path: Optional[str] = None):
     print(f"🚀 Starting image fetch for checks {start_check} → {end_check} (account filter: '{account_name_contains}')")
 
-    # Save under Automated-Payee-Name-Extraction/data/images/YYYY-MM/
-    base_dir = os.path.join(os.getcwd(), "Automated-Payee-Name-Extraction")
+    # Save under current project data/images/YYYY-MM/
+    base_dir = os.getcwd()
     base_images_dir = os.path.join("data", "images")
     month_folder = datetime.now().strftime("%Y-%m")
     image_dir = os.path.join(base_images_dir, month_folder)
@@ -48,9 +48,9 @@ def main(start_check: int, end_check: int, account_name_contains: str = "CHECKIN
     df = None
     if parsed_csv_path:
         try:
-            # Ensure parsed_csv_path is relative to base_dir if not absolute
+            # Use the parsed_csv_path as-is if it's absolute, otherwise make it relative to current directory
             if not os.path.isabs(parsed_csv_path):
-                parsed_csv_path = os.path.join(base_dir, parsed_csv_path)
+                parsed_csv_path = os.path.join(os.getcwd(), parsed_csv_path)
             df = pd.read_csv(parsed_csv_path)
             # Ensure columns exist
             if 'bank' not in df.columns:
@@ -78,7 +78,7 @@ def main(start_check: int, end_check: int, account_name_contains: str = "CHECKIN
 
     with sync_playwright() as p:
         user_data_dir = os.path.expanduser(
-            r"C:\Users\Evelyn\AppData\Local\Google\Chrome\User Data\Default"
+            r"~\AppData\Local\Google\Chrome\User Data\Default"
         )
         context = p.chromium.launch_persistent_context(
             user_data_dir=user_data_dir,

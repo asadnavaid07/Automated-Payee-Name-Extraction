@@ -92,8 +92,9 @@ class DesktopApp(tk.Tk):
             self.parsed_checks = checks
             # Update UI on main thread
             self.after(0, self._update_results)
-            # Inform about export file
-            export_path = self.selected_file_path.replace(".csv", "_parsed.csv")
+            # Inform about export file (now in out/ directory)
+            base_name = os.path.basename(self.selected_file_path).replace(".csv", "_parsed.csv")
+            export_path = os.path.join("out", base_name)
             self.after(0, lambda: messagebox.showinfo("Completed", f"Parsed {len(checks)} checks.\nSaved: {export_path}"))
 
             # Auto-start image fetching using numeric min/max from parsed checks
