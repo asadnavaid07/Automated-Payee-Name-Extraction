@@ -1,4 +1,5 @@
 venv
 .env
-ocr/images/*.png
+data/
+out/
 __pycache__/

@@ -5,8 +5,19 @@ import google.generativeai as genai
 import json
 import os
 from dotenv import load_dotenv
-from ..models import CheckTransaction
+from pydantic import BaseModel
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
+from typing import List
 
+class CheckTransaction(BaseModel):
+    check_number: str
+    date: Optional[datetime] = None
+    amount: Optional[float] = None
+    payee: Optional[str] = None
+    confidence: Optional[float] = None
+    flagged_for_review: bool = False
 
 load_dotenv()
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
@@ -306,7 +317,13 @@ Example: {{"check_number": 0, "date": 1, "amount": 3}}
                 "Amount": chk.amount if chk.amount is not None else ""
             } for chk in all_checks])
             
-            export_path = file_path.replace('.csv', '_parsed.csv')
+            # Ensure base out directory exists and export there
+            base_dir = os.getcwd()
+            out_dir = os.path.join(base_dir, 'out')
+            os.makedirs(out_dir, exist_ok=True)
+
+            base_name = os.path.basename(file_path).replace('.csv', '_parsed.csv')
+            export_path = os.path.join(out_dir, base_name)
             export_df.to_csv(export_path, index=False)
             print(f"\nExported {len(all_checks)} checks to {export_path}")
         
