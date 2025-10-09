@@ -16,6 +16,7 @@ class DesktopApp(tk.Tk):
 
         self.selected_file_path: str | None = None
         self.parsed_checks: List[CheckTransaction] = []
+        self.final_csv_path: str | None = None
 
         self._build_ui()
 
@@ -32,6 +33,16 @@ class DesktopApp(tk.Tk):
 
         self.process_btn = ttk.Button(top_frame, text="Process", command=self._on_process)
         self.process_btn.pack(side=tk.RIGHT)
+
+        # Action buttons frame
+        action_frame = ttk.Frame(self, padding=10)
+        action_frame.pack(fill=tk.X)
+
+        self.download_btn = ttk.Button(action_frame, text="Download Final CSV", command=self._on_download_final_csv, state=tk.DISABLED)
+        self.download_btn.pack(side=tk.LEFT, padx=5)
+
+        self.streamlit_btn = ttk.Button(action_frame, text="Open Streamlit Review", command=self._on_open_streamlit, state=tk.DISABLED)
+        self.streamlit_btn.pack(side=tk.LEFT, padx=5)
 
         # Table
         columns = ("check_number", "date", "amount")
@@ -123,6 +134,8 @@ class DesktopApp(tk.Tk):
         self.select_btn.config(state=tk.NORMAL)
         if not self.parsed_checks:
             self.status_var.set("Ready")
+            self.download_btn.config(state=tk.DISABLED)
+            self.streamlit_btn.config(state=tk.DISABLED)
 
     def _run_fetch_images(self, start_check: int, end_check: int, parsed_csv_path: str) -> None:
         try:
@@ -140,6 +153,7 @@ class DesktopApp(tk.Tk):
                         os.path.basename(parsed_csv_path).replace("_parsed.csv", "_final.csv"),
                     )
                     shutil.copyfile(parsed_csv_path, auto_out_path)
+                    self.final_csv_path = auto_out_path
                 except Exception:
                     pass
                 out_path = filedialog.asksaveasfilename(
@@ -156,10 +170,48 @@ class DesktopApp(tk.Tk):
                     except Exception as ex:
                         messagebox.showerror("Save Failed", str(ex))
             self.after(0, save_final_copy)
+            # Enable action buttons after processing
+            self.after(0, lambda: self.download_btn.config(state=tk.NORMAL))
+            self.after(0, lambda: self.streamlit_btn.config(state=tk.NORMAL))
         except Exception as e:
             self.after(0, lambda err=e: messagebox.showerror("Error fetching images", str(err)))
         finally:
             self.after(0, lambda: self.status_var.set("Ready"))
+
+    def _on_download_final_csv(self) -> None:
+        if not self.final_csv_path or not os.path.exists(self.final_csv_path):
+            messagebox.showwarning("No final CSV", "No final CSV available. Please process a file first.")
+            return
+        
+        out_path = filedialog.asksaveasfilename(
+            title="Save Final CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv")],
+            initialfile=os.path.basename(self.final_csv_path),
+        )
+        if out_path:
+            try:
+                import shutil
+                shutil.copyfile(self.final_csv_path, out_path)
+                messagebox.showinfo("Downloaded", f"Final CSV saved to\n{out_path}")
+            except Exception as ex:
+                messagebox.showerror("Download Failed", str(ex))
+
+    def _on_open_streamlit(self) -> None:
+        if not self.final_csv_path or not os.path.exists(self.final_csv_path):
+            messagebox.showwarning("No final CSV", "No final CSV available. Please process a file first.")
+            return
+        
+        try:
+            import subprocess
+            import sys
+            
+            # Start Streamlit with the final CSV path as an argument
+            cmd = [sys.executable, "-m", "streamlit", "run", "src/reviewer.py", "--", "--csv-path", self.final_csv_path]
+            subprocess.Popen(cmd, cwd=os.getcwd())
+            messagebox.showinfo("Streamlit", f"Opening Streamlit review for:\n{self.final_csv_path}")
+        except Exception as ex:
+            messagebox.showerror("Streamlit Error", f"Failed to open Streamlit: {str(ex)}")
 
 
 def main() -> None:

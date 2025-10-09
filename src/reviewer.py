@@ -1,16 +1,34 @@
 import os
 import pandas as pd
 import streamlit as st
+import sys
+import argparse
 
 
 def load_csv(path: str) -> pd.DataFrame:
     df = pd.read_csv(path)
-    for col in [
-        'Check Number', 'payee_name', 'amount', 'date',
-        'bank', 'img_front_path', 'img_back_path', 'confidence', 'source'
-    ]:
-        if col not in df.columns:
-            df[col] = ''
+    
+    # Ensure all required columns exist with proper names
+    required_columns = {
+        'Check Number': 'check_number',
+        'payee_name': 'payee_name', 
+        'amount': 'amount',
+        'date': 'date',
+        'bank': 'bank',
+        'img_front_path': 'img_front_path',
+        'img_back_path': 'img_back_path',
+        'confidence': 'confidence',
+        'source': 'source'
+    }
+    
+    for display_name, col_name in required_columns.items():
+        if col_name not in df.columns and display_name not in df.columns:
+            df[col_name] = ''
+        elif display_name in df.columns and col_name not in df.columns:
+            # Rename display name to standard name
+            df[col_name] = df[display_name]
+            if col_name != display_name:
+                df = df.drop(columns=[display_name])
 
     try:
         df['confidence'] = pd.to_numeric(df['confidence'], errors='coerce').fillna(0.0)
@@ -23,14 +41,20 @@ def main() -> None:
     st.set_page_config(page_title="Check Payee Reviewer", layout="wide")
     st.title("Check Payee Reviewer")
 
+    # Parse command line arguments for CSV path
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--csv-path', help='Path to the final CSV file')
+    args = parser.parse_args()
+    
     st.sidebar.header("Data")
+    default_csv_path = args.csv_path if args.csv_path else ""
     parsed_csv_path = st.sidebar.text_input(
-        "Parsed CSV path",
-        value="",
-        placeholder="e.g. C:/path/to/statement_parsed.csv",
+        "Final CSV path",
+        value=default_csv_path,
+        placeholder="e.g. C:/path/to/statement_final.csv",
     )
 
-    uploaded = st.sidebar.file_uploader("Or upload parsed CSV", type=["csv"])
+    uploaded = st.sidebar.file_uploader("Or upload final CSV", type=["csv"])
 
     df = None
     if uploaded is not None:
@@ -39,7 +63,7 @@ def main() -> None:
         df = load_csv(parsed_csv_path)
 
     if df is None:
-        st.info("Provide a parsed CSV path or upload a CSV to begin.")
+        st.info("Provide a final CSV path or upload a CSV to begin.")
         return
 
     st.sidebar.header("Filters")
@@ -62,7 +86,8 @@ def main() -> None:
     edited_rows = 0
 
     for idx, row in view_df.iterrows():
-        with st.expander(f"Check {row.get('Check Number', '')} – confidence={row.get('confidence', 0):.2f}"):
+        check_num = row.get('check_number', '') or row.get('Check Number', '')
+        with st.expander(f"Check {check_num} – confidence={row.get('confidence', 0):.2f}"):
             cols = st.columns([2, 3])
             with cols[0]:
                 front_path = row.get('img_front_path', '')
@@ -89,7 +114,7 @@ def main() -> None:
     left, right = st.columns(2)
     with left:
         if parsed_csv_path and os.path.exists(parsed_csv_path):
-            if st.button("Write changes back to parsed CSV"):
+            if st.button("Write changes back to final CSV"):
                 try:
                     df.to_csv(parsed_csv_path, index=False)
                     st.success(f"Saved changes to {parsed_csv_path}")
