@@ -30,6 +30,12 @@ def load_csv(path: str) -> pd.DataFrame:
             if col_name != display_name:
                 df = df.drop(columns=[display_name])
 
+    # Fill NaN values with empty strings for string columns
+    string_columns = ['check_number', 'payee_name', 'amount', 'date', 'bank', 'img_front_path', 'img_back_path', 'source']
+    for col in string_columns:
+        if col in df.columns:
+            df[col] = df[col].fillna('').astype(str)
+
     try:
         df['confidence'] = pd.to_numeric(df['confidence'], errors='coerce').fillna(0.0)
     except Exception:
@@ -92,6 +98,11 @@ def main() -> None:
             with cols[0]:
                 front_path = row.get('img_front_path', '')
                 back_path = row.get('img_back_path', '')
+                
+                # Ensure paths are strings and not NaN/float
+                front_path = str(front_path) if pd.notna(front_path) and front_path != '' else ''
+                back_path = str(back_path) if pd.notna(back_path) and back_path != '' else ''
+                
                 if front_path and os.path.exists(front_path):
                     st.image(front_path, caption="Front", use_column_width=True)
                 if back_path and os.path.exists(back_path):

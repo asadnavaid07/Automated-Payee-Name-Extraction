@@ -29,7 +29,7 @@ def run_ocr(front_path: str, check_number: str) -> Optional[dict]:
         print(f"⚠️ Front image not found at {front_path}. Skipping OCR.")
         return None
     try:
-        return extract_check_info(front_path, expected_check_number=check_number)
+        return extract_check_info(front_path)
     except Exception as e:
         print(f"⚠️ OCR failed for {front_path}: {e}")
         return None
