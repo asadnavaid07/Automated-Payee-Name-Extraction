@@ -217,6 +217,8 @@ class DesktopApp(tk.Tk):
         try:
             import subprocess
             import sys
+            import shutil
+            from datetime import datetime
             
             # Get the absolute path to the reviewer.py file
             reviewer_path = os.path.join(os.getcwd(), "src", "reviewer.py")
@@ -224,18 +226,82 @@ class DesktopApp(tk.Tk):
                 messagebox.showerror("Streamlit Error", f"Reviewer file not found at: {reviewer_path}")
                 return
             
-            # Start Streamlit with the final CSV path as an argument
-            # Use proper argument passing for Streamlit
-            cmd = [
-                sys.executable, "-m", "streamlit", "run", 
-                reviewer_path, 
+            # Prepare log file
+            base_dir = os.getcwd()
+            out_dir = os.path.join(base_dir, 'out')
+            os.makedirs(out_dir, exist_ok=True)
+            log_path = os.path.join(out_dir, 'streamlit_launch.log')
+            log_file = open(log_path, 'a', encoding='utf-8')
+            log_file.write(f"\n=== Launch attempt {datetime.now().isoformat()} ===\n")
+
+            # Resolve venv python explicitly (prefer venv over current interpreter)
+            if os.name == 'nt':
+                venv_python = os.path.join(base_dir, 'venv', 'Scripts', 'python.exe')
+                venv_streamlit_exe = os.path.join(base_dir, 'venv', 'Scripts', 'streamlit.exe')
+            else:
+                venv_python = os.path.join(base_dir, 'venv', 'bin', 'python')
+                venv_streamlit_exe = os.path.join(base_dir, 'venv', 'bin', 'streamlit')
+
+            python_cmd = venv_python if os.path.exists(venv_python) else sys.executable
+            log_file.write(f"Using python: {python_cmd}\n")
+
+            # Ensure streamlit is installed in the chosen interpreter (ideally venv)
+            try:
+                precheck = subprocess.run([python_cmd, '-c', 'import streamlit; print(streamlit.__version__)'],
+                                          cwd=base_dir, capture_output=True, text=True)
+                if precheck.returncode != 0:
+                    log_file.write("Streamlit not available, installing into environment...\n")
+                    install = subprocess.run([python_cmd, '-m', 'pip', 'install', 'streamlit==1.38.0'],
+                                             cwd=base_dir, stdout=log_file, stderr=log_file, text=True)
+                    log_file.write(f"pip exit code: {install.returncode}\n")
+            except Exception as pip_ex:
+                log_file.write(f"pip install failed: {pip_ex}\n")
+
+            # Build possible commands (module, absolute exe in venv, PATH)
+            candidates = []
+            candidates.append([
+                python_cmd, "-m", "streamlit", "run",
+                reviewer_path,
                 "--server.headless", "false",
-                "--", "--csv-path", self.final_csv_path
-            ]
-            
-            # Start the process in a new window
-            subprocess.Popen(cmd, cwd=os.getcwd(), creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0)
-            messagebox.showinfo("Streamlit", f"Opening Streamlit review for:\n{self.final_csv_path}\n\nStreamlit should open in your browser shortly.")
+                "--", "--csv-path", self.final_csv_path,
+            ])
+
+            if os.path.exists(venv_streamlit_exe):
+                candidates.append([
+                    venv_streamlit_exe, "run", reviewer_path,
+                    "--server.headless", "false",
+                    "--", "--csv-path", self.final_csv_path,
+                ])
+
+            if shutil.which("streamlit"):
+                candidates.append([
+                    "streamlit", "run", reviewer_path,
+                    "--server.headless", "false",
+                    "--", "--csv-path", self.final_csv_path,
+                ])
+
+            last_error = None
+            for cmd in candidates:
+                try:
+                    log_file.write(f"Trying: {' '.join(cmd)}\n")
+                    subprocess.Popen(
+                        cmd,
+                        cwd=base_dir,
+                        stdout=log_file,
+                        stderr=log_file,
+                        creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0,
+                    )
+                    messagebox.showinfo(
+                        "Streamlit",
+                        f"Opening Streamlit review for:\n{self.final_csv_path}\n\nIf it doesn't open, check log:\n{log_path}"
+                    )
+                    return
+                except Exception as ex_inner:
+                    last_error = ex_inner
+                    log_file.write(f"Failed: {ex_inner}\n")
+
+            # If all attempts failed
+            raise last_error if last_error else RuntimeError("Failed to launch Streamlit with all methods")
         except Exception as ex:
             messagebox.showerror("Streamlit Error", f"Failed to open Streamlit: {str(ex)}")
 

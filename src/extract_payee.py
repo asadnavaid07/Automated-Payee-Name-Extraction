@@ -45,8 +45,8 @@ def extract_check_info(image_path):
     # Extract check number
     check_number = extract_check_number(full_text, texts)
     
-    # Calculate confidence based on extraction success
-    confidence = calculate_confidence(payee_name, check_number)
+    # Calculate confidence based on extraction success and textual heuristics
+    confidence = calculate_confidence(payee_name, check_number, full_text)
     
     return {
         "check_number": check_number,
@@ -93,8 +93,17 @@ def extract_payee_name(full_text, texts):
     
     # Strategy 3: Look for pattern where payee is between company header and amount
     # Skip first few lines (company header), look for name before amounts/dates
-    company_keywords = ["Love United Transport", "BUSHBERRY", "FONTANA", "PAY", "TO THE"]
-    amount_keywords = ["THOUSAND", "HUNDRED", "DOLLARS", "$", "FOR", "JPMorgan", "DATE"]
+    company_keywords = [
+        "Love United Transport", "BUSHBERRY", "PAY", "TO THE", "CHASE", "JPMorgan",
+        # Headers and boilerplate words to skip
+    ]
+    amount_keywords = [
+        "THOUSAND", "HUNDRED", "DOLLARS", "$", "FOR", "DATE", "PAY TO THE ORDER OF",
+        "MEMO", "AMOUNT"
+    ]
+    location_noise_keywords = [
+        "FONTANA", "CA", "USA", "CITY", "STATE", "ZIP"
+    ]
     
     # Find where company info ends
     company_end_idx = 0
@@ -119,6 +128,12 @@ def extract_payee_name(full_text, texts):
             if re.match(r'^\d+$', line):  # Just a number
                 continue
             if re.match(r'^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}$', line):  # Date
+                continue
+            # Skip clear location lines (e.g., CITY, ST or CITY, ST 12345)
+            if re.search(r",\s*[A-Z]{2}(?:\s*\d{5})?$", line.strip()):
+                continue
+            if any(kw.lower() in line.lower() for kw in location_noise_keywords):
+                # Likely address/city/state noise
                 continue
             
             payee = clean_payee_name(line)
@@ -211,11 +226,16 @@ def is_valid_payee(payee):
     if re.match(r'^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}$', payee):
         return False
     
-    amount_words = {"THOUSAND", "HUNDRED", "DOLLARS", "ONE", "TWO", "THREE", "FOUR", "FIVE", 
-                    "SIX", "SEVEN", "EIGHT", "NINE", "TEN", "TWENTY", "THIRTY", "FORTY", 
-                    "FIFTY", "SIXTY", "SEVENTY", "EIGHTY", "NINETY"}
+    amount_words = {"ZERO", "ONE", "TWO", "THREE", "FOUR", "FIVE",
+                    "SIX", "SEVEN", "EIGHT", "NINE", "TEN", "ELEVEN", "TWELVE",
+                    "THIRTEEN", "FOURTEEN", "FIFTEEN", "SIXTEEN", "SEVENTEEN", "EIGHTEEN", "NINETEEN",
+                    "TWENTY", "THIRTY", "FORTY", "FIFTY", "SIXTY", "SEVENTY", "EIGHTY", "NINETY",
+                    "HUNDRED", "THOUSAND", "MILLION", "BILLION", "DOLLARS"}
     words = payee.upper().split()
     if all(word in amount_words for word in words):
+        return False
+    # Reject clear location patterns: CITY, ST or CITY, ST 12345
+    if re.search(r",\s*[A-Z]{2}(?:\s*\d{5})?$", payee.strip().upper()):
         return False
     
     if not re.search(r'[A-Za-z]', payee):
@@ -301,25 +321,82 @@ def extract_check_number(full_text, texts):
     return "Not found"
 
 
-def calculate_confidence(payee_name, check_number):
-    """Calculate confidence score based on extraction results"""
-    confidence = 0.5
-    
-    if payee_name != "Not found":
-        confidence += 0.3
-        if len(payee_name.split()) >= 2:
-            confidence += 0.1
-    
-    if check_number != "Not found":
-        confidence += 0.2
-    
-    return min(confidence, 0.98)
+def calculate_confidence(payee_name, check_number, full_text):
+    """Calculate confidence using payee quality heuristics and presence of check number.
+    Returns a value in [0, 0.98]."""
+    # Base confidence
+    confidence = 0.2
+
+    # Score payee quality
+    payee_quality = 0.0
+    if payee_name and payee_name != "Not found":
+        payee_quality = score_payee_quality(payee_name)
+        # Weight the quality substantially
+        confidence += 0.6 * payee_quality
+
+    # Add bonus for check number found
+    if check_number and check_number != "Not found":
+        confidence += 0.18
+
+    # Clamp
+    confidence = max(0.0, min(confidence, 0.98))
+    return confidence
+
+
+def score_payee_quality(payee: str) -> float:
+    """Heuristic scoring of how plausible a payee string is (0..1).
+    Penalize amounts, city/state, and generic words; reward entity suffixes or natural name casing."""
+    s = payee.strip()
+    up = s.upper()
+    words = [w for w in re.split(r"\s+", s) if w]
+
+    if not words:
+        return 0.0
+
+    score = 0.0
+
+    # Reward presence of common business suffixes or two+ words
+    suffixes = {"INC", "LLC", "L.L.C", "CORP", "CORPORATION", "CO", "CO.", "LTD", "COMPANY"}
+    if any(up.endswith(suf) or up.endswith(", " + suf) for suf in suffixes):
+        score += 0.45
+    if len(words) >= 2:
+        score += 0.2
+
+    # Reward reasonable length
+    if 5 <= len(s) <= 40:
+        score += 0.15
+
+    # Penalize digits inside name
+    if re.search(r"\d", s):
+        score -= 0.35
+
+    # Penalize city/state patterns
+    if re.search(r",\s*[A-Z]{2}(?:\s*\d{5})?$", up):
+        score -= 0.5
+
+    # Penalize if most words are number/amount words
+    amount_words = {"ZERO", "ONE", "TWO", "THREE", "FOUR", "FIVE",
+                    "SIX", "SEVEN", "EIGHT", "NINE", "TEN", "ELEVEN", "TWELVE",
+                    "THIRTEEN", "FOURTEEN", "FIFTEEN", "SIXTEEN", "SEVENTEEN", "EIGHTEEN", "NINETEEN",
+                    "TWENTY", "THIRTY", "FORTY", "FIFTY", "SIXTY", "SEVENTY", "EIGHTY", "NINETY",
+                    "HUNDRED", "THOUSAND", "MILLION", "BILLION", "DOLLARS"}
+    total = len(words)
+    amount_like = sum(1 for w in words if w.upper().strip('.,') in amount_words)
+    if amount_like / total >= 0.5:
+        score -= 0.5
+
+    # Slight penalty if entire string is ALL CAPS without punctuation (often OCR header noise)
+    if up == s and re.search(r"[A-Z]", s) and not re.search(r"[a-z]", s):
+        score -= 0.05
+
+    # Normalize to [0,1]
+    return max(0.0, min(1.0, score))
 
 
 if __name__ == "__main__":
     test_images = [
-        r"data\images\check_4828_front_20251008_143400.png",
-        r"data\images\check_4829_front_20251008_143407.png",
+        r"data\images\check_4819_front_20251008_143212.png",
+        r"data\images\check_4822_front_20251008_143231.png",
     ]
     
     for image_path in test_images:
