@@ -64,6 +64,7 @@ class DesktopApp(tk.Tk):
         file_path = filedialog.askopenfilename(
             title="Select bank statement CSV",
             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            initialdir=os.getcwd(),  # Start from project root, not samples folder
         )
         if file_path:
             self.selected_file_path = file_path
@@ -157,10 +158,15 @@ class DesktopApp(tk.Tk):
                     self.final_csv_path = auto_out_path
                 except Exception:
                     pass
+                # Ensure out directory exists
+                out_dir = os.path.join(os.getcwd(), 'out')
+                os.makedirs(out_dir, exist_ok=True)
+                
                 out_path = filedialog.asksaveasfilename(
                     title="Save Final CSV",
                     defaultextension=".csv",
                     filetypes=[("CSV files", "*.csv")],
+                    initialdir=out_dir,  # Start from out/ folder, not samples
                     initialfile=os.path.basename(parsed_csv_path).replace("_parsed.csv", "_final.csv"),
                 )
                 if out_path:
@@ -184,10 +190,15 @@ class DesktopApp(tk.Tk):
             messagebox.showwarning("No final CSV", "No final CSV available. Please process a file first.")
             return
         
+        # Ensure out directory exists
+        out_dir = os.path.join(os.getcwd(), 'out')
+        os.makedirs(out_dir, exist_ok=True)
+        
         out_path = filedialog.asksaveasfilename(
             title="Save Final CSV",
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv")],
+            initialdir=out_dir,  # Start from out/ folder, not samples
             initialfile=os.path.basename(self.final_csv_path),
         )
         if out_path:
@@ -207,10 +218,24 @@ class DesktopApp(tk.Tk):
             import subprocess
             import sys
             
+            # Get the absolute path to the reviewer.py file
+            reviewer_path = os.path.join(os.getcwd(), "src", "reviewer.py")
+            if not os.path.exists(reviewer_path):
+                messagebox.showerror("Streamlit Error", f"Reviewer file not found at: {reviewer_path}")
+                return
+            
             # Start Streamlit with the final CSV path as an argument
-            cmd = [sys.executable, "-m", "streamlit", "run", "src/reviewer.py", "--", "--csv-path", self.final_csv_path]
-            subprocess.Popen(cmd, cwd=os.getcwd())
-            messagebox.showinfo("Streamlit", f"Opening Streamlit review for:\n{self.final_csv_path}")
+            # Use proper argument passing for Streamlit
+            cmd = [
+                sys.executable, "-m", "streamlit", "run", 
+                reviewer_path, 
+                "--server.headless", "false",
+                "--", "--csv-path", self.final_csv_path
+            ]
+            
+            # Start the process in a new window
+            subprocess.Popen(cmd, cwd=os.getcwd(), creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0)
+            messagebox.showinfo("Streamlit", f"Opening Streamlit review for:\n{self.final_csv_path}\n\nStreamlit should open in your browser shortly.")
         except Exception as ex:
             messagebox.showerror("Streamlit Error", f"Failed to open Streamlit: {str(ex)}")
 

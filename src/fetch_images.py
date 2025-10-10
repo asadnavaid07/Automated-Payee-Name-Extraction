@@ -52,19 +52,23 @@ def main(start_check: int, end_check: int, account_name_contains: str = "CHECKIN
             if not os.path.isabs(parsed_csv_path):
                 parsed_csv_path = os.path.join(os.getcwd(), parsed_csv_path)
             df = pd.read_csv(parsed_csv_path)
-            # Ensure columns exist
-            if 'bank' not in df.columns:
-                df['bank'] = ''
-            if 'img_front_path' not in df.columns:
-                df['img_front_path'] = ''
-            if 'img_back_path' not in df.columns:
-                df['img_back_path'] = ''
-            if 'payee_name' not in df.columns:
-                df['payee_name'] = ''
-            if 'confidence' not in df.columns:
-                df['confidence'] = ''
-            if 'source' not in df.columns:
-                df['source'] = ''
+            # Ensure columns exist and remove duplicates
+            required_columns = {
+                'bank': '',
+                'img_front_path': '',
+                'img_back_path': '',
+                'payee_name': '',
+                'confidence': '',
+                'source': ''
+            }
+            
+            # Remove duplicate columns by keeping only the first occurrence
+            df = df.loc[:, ~df.columns.duplicated()]
+            
+            # Add missing columns
+            for col_name, default_value in required_columns.items():
+                if col_name not in df.columns:
+                    df[col_name] = default_value
         except Exception as e:
             print(f"⚠️ Could not load parsed CSV '{parsed_csv_path}': {e}")
             df = None

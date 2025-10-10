@@ -8,6 +8,9 @@ import argparse
 def load_csv(path: str) -> pd.DataFrame:
     df = pd.read_csv(path)
     
+    # Remove duplicate columns first
+    df = df.loc[:, ~df.columns.duplicated()]
+    
     # Ensure all required columns exist with proper names
     required_columns = {
         'Check Number': 'check_number',
@@ -122,23 +125,37 @@ def main() -> None:
                     st.success("Saved.")
 
     st.markdown("---")
-    left, right = st.columns(2)
-    with left:
-        if parsed_csv_path and os.path.exists(parsed_csv_path):
-            if st.button("Write changes back to final CSV"):
-                try:
-                    df.to_csv(parsed_csv_path, index=False)
-                    st.success(f"Saved changes to {parsed_csv_path}")
-                except Exception as e:
-                    st.error(str(e))
-    with right:
+    
+    # Single download section
+    st.subheader("Download & Save")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        # Single download button for the current CSV
         st.download_button(
-            label="Download current CSV",
+            label="📥 Download Final CSV",
             data=df.to_csv(index=False).encode('utf-8'),
             file_name="statement_final.csv",
             mime="text/csv",
+            help="Download the current CSV with all your changes"
         )
-        if st.button("Save current CSV to base out/"):
+    
+    with col2:
+        # Save to original file if it exists
+        if parsed_csv_path and os.path.exists(parsed_csv_path):
+            if st.button("💾 Save to Original File", help="Save changes back to the original CSV file"):
+                try:
+                    df.to_csv(parsed_csv_path, index=False)
+                    st.success(f"✅ Saved changes to {parsed_csv_path}")
+                except Exception as e:
+                    st.error(f"❌ Error: {str(e)}")
+        else:
+            st.info("No original file to save to")
+    
+    with col3:
+        # Save to out directory
+        if st.button("📁 Save to Out Folder", help="Save a copy to the out/ directory"):
             try:
                 base_dir = os.getcwd()
                 out_dir = os.path.join(base_dir, 'out')
@@ -146,9 +163,9 @@ def main() -> None:
                 file_name = "statement_final.csv"
                 out_path = os.path.join(out_dir, file_name)
                 df.to_csv(out_path, index=False)
-                st.success(f"Saved to {out_path}")
+                st.success(f"✅ Saved to {out_path}")
             except Exception as e:
-                st.error(str(e))
+                st.error(f"❌ Error: {str(e)}")
 
 
 if __name__ == "__main__":
