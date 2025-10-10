@@ -325,18 +325,18 @@ def calculate_confidence(payee_name, check_number, full_text):
     """Calculate confidence using payee quality heuristics and presence of check number.
     Returns a value in [0, 0.98]."""
     # Base confidence
-    confidence = 0.2
+    confidence = 0.3
 
     # Score payee quality
     payee_quality = 0.0
     if payee_name and payee_name != "Not found":
         payee_quality = score_payee_quality(payee_name)
-        # Weight the quality substantially
-        confidence += 0.6 * payee_quality
+        # Weight the quality but not too heavily
+        confidence += 0.5 * payee_quality
 
     # Add bonus for check number found
     if check_number and check_number != "Not found":
-        confidence += 0.18
+        confidence += 0.15
 
     # Clamp
     confidence = max(0.0, min(confidence, 0.98))
@@ -345,7 +345,7 @@ def calculate_confidence(payee_name, check_number, full_text):
 
 def score_payee_quality(payee: str) -> float:
     """Heuristic scoring of how plausible a payee string is (0..1).
-    Penalize amounts, city/state, and generic words; reward entity suffixes or natural name casing."""
+    Penalize obvious wrong ones (amounts, city/state) but be lenient on legitimate business names."""
     s = payee.strip()
     up = s.upper()
     words = [w for w in re.split(r"\s+", s) if w]
@@ -353,41 +353,45 @@ def score_payee_quality(payee: str) -> float:
     if not words:
         return 0.0
 
-    score = 0.0
+    score = 0.5  # Start with neutral score instead of 0
 
-    # Reward presence of common business suffixes or two+ words
-    suffixes = {"INC", "LLC", "L.L.C", "CORP", "CORPORATION", "CO", "CO.", "LTD", "COMPANY"}
+    # Strong reward for business suffixes
+    suffixes = {"INC", "LLC", "L.L.C", "CORP", "CORPORATION", "CO", "CO.", "LTD", "COMPANY", "TRUCKING", "TRANSPORT"}
     if any(up.endswith(suf) or up.endswith(", " + suf) for suf in suffixes):
-        score += 0.45
-    if len(words) >= 2:
-        score += 0.2
+        score += 0.3
+    elif len(words) >= 2:
+        score += 0.2  # Multi-word names are generally good
 
     # Reward reasonable length
-    if 5 <= len(s) <= 40:
-        score += 0.15
+    if 3 <= len(s) <= 50:
+        score += 0.1
 
-    # Penalize digits inside name
-    if re.search(r"\d", s):
-        score -= 0.35
+    # Only penalize if digits are prominent (not just incidental)
+    digit_count = len(re.findall(r"\d", s))
+    if digit_count > len(s) * 0.3:  # More than 30% digits
+        score -= 0.3
 
-    # Penalize city/state patterns
+    # Strong penalty for city/state patterns
     if re.search(r",\s*[A-Z]{2}(?:\s*\d{5})?$", up):
-        score -= 0.5
+        score -= 0.6
 
-    # Penalize if most words are number/amount words
+    # Strong penalty for pure number words (like "THIRTEEN")
     amount_words = {"ZERO", "ONE", "TWO", "THREE", "FOUR", "FIVE",
                     "SIX", "SEVEN", "EIGHT", "NINE", "TEN", "ELEVEN", "TWELVE",
                     "THIRTEEN", "FOURTEEN", "FIFTEEN", "SIXTEEN", "SEVENTEEN", "EIGHTEEN", "NINETEEN",
                     "TWENTY", "THIRTY", "FORTY", "FIFTY", "SIXTY", "SEVENTY", "EIGHTY", "NINETY",
                     "HUNDRED", "THOUSAND", "MILLION", "BILLION", "DOLLARS"}
-    total = len(words)
-    amount_like = sum(1 for w in words if w.upper().strip('.,') in amount_words)
-    if amount_like / total >= 0.5:
-        score -= 0.5
+    
+    # If ALL words are amount words, it's definitely wrong
+    if all(w.upper().strip('.,') in amount_words for w in words):
+        score -= 0.7
+    # If most words are amount words, penalize moderately
+    elif sum(1 for w in words if w.upper().strip('.,') in amount_words) / len(words) >= 0.7:
+        score -= 0.4
 
-    # Slight penalty if entire string is ALL CAPS without punctuation (often OCR header noise)
+    # Small penalty for ALL CAPS (but not too harsh)
     if up == s and re.search(r"[A-Z]", s) and not re.search(r"[a-z]", s):
-        score -= 0.05
+        score -= 0.1
 
     # Normalize to [0,1]
     return max(0.0, min(1.0, score))
@@ -397,6 +401,12 @@ if __name__ == "__main__":
     test_images = [
         r"data\images\check_4819_front_20251008_143212.png",
         r"data\images\check_4822_front_20251008_143231.png",
+        r"data\images\check_4820_front_20251008_143218.png",
+        r"data\images\check_4821_front_20251008_143225.png",
+        r"data\images\check_4823_front_20251008_143238.png",
+        r"data\images\check_4825_front_20251008_143252.png",
+        r"data\images\check_4827_front_20251008_143354.png",
+        r"data\images\check_4828_front_20251008_143400.png",
     ]
     
     for image_path in test_images:
