@@ -45,14 +45,14 @@ class DesktopApp(tk.Tk):
         
         self.select_btn = ttk.Button(file_frame, text="📂 Select Bank Statement CSV", command=self._on_select_csv)
         self.select_btn.pack(side=tk.LEFT, padx=(0, 10))
-        
+
         self.file_label_var = tk.StringVar(value="No file selected")
         self.file_label = ttk.Label(file_frame, textvariable=self.file_label_var, foreground="gray")
         self.file_label.pack(side=tk.LEFT, padx=10)
-        
+
         self.process_btn = ttk.Button(file_frame, text="🚀 Start Processing", command=self._on_process, state=tk.DISABLED)
         self.process_btn.pack(side=tk.RIGHT)
-        
+
         # Progress section
         progress_frame = ttk.LabelFrame(main_frame, text="📊 Processing Progress", padding=10)
         progress_frame.pack(fill=tk.X, pady=(0, 10))
@@ -126,7 +126,7 @@ class DesktopApp(tk.Tk):
         
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
+
         # Status bar
         status_frame = ttk.Frame(main_frame)
         status_frame.pack(fill=tk.X, pady=(10, 0))
@@ -301,17 +301,11 @@ class DesktopApp(tk.Tk):
             self.after(0, lambda: self._update_operation("Fetching check images from bank website..."))
             self.after(0, lambda: self._log_message("Opening browser for bank login..."))
             self.after(0, lambda: self._log_message("IMPORTANT: Please complete login and 2FA in the browser window"))
+            self.after(0, lambda: self._log_message("Note: If you see 'Input fields not visible' or 'No record found' errors, you may need to re-login"))
             
             # Calculate expected total checks
             expected_total = end_check - start_check + 1
             self.after(0, lambda: self._update_progress(0, expected_total, 0, 0))
-            
-            # Start a progress monitoring thread
-            progress_thread = threading.Thread(
-                target=lambda: self._monitor_progress(start_check, end_check, parsed_csv_path),
-                daemon=True
-            )
-            progress_thread.start()
             
             # Run the actual image fetching
             fetch_images_main(start_check=start_check, end_check=end_check, parsed_csv_path=parsed_csv_path)
@@ -374,6 +368,7 @@ class DesktopApp(tk.Tk):
         finally:
             self.after(0, lambda: self.status_var.set("Ready"))
 
+
     def _monitor_progress(self, start_check: int, end_check: int, parsed_csv_path: str) -> None:
         """Monitor progress by checking for new images and updating UI accordingly"""
         import time
@@ -435,14 +430,48 @@ class DesktopApp(tk.Tk):
                 break
 
     def _update_final_progress(self, start_check: int, end_check: int) -> None:
-        """Update progress with final accurate counts"""
+        """Update progress with final accurate counts by checking CSV and images"""
         import os
+        import pandas as pd
         
         expected_total = end_check - start_check + 1
         successful = 0
         failed = 0
         
-        # Count actual results by scanning all subdirectories
+        # Try to get results from the CSV file first (more accurate)
+        try:
+            if hasattr(self, 'final_csv_path') and self.final_csv_path and os.path.exists(self.final_csv_path):
+                df = pd.read_csv(self.final_csv_path)
+                
+                # Count checks that have image paths
+                for _, row in df.iterrows():
+                    check_num = row.get('Check Number', '')
+                    try:
+                        check_num_int = int(str(check_num).strip())
+                        if start_check <= check_num_int <= end_check:
+                            front_path = str(row.get('img_front_path', ''))
+                            back_path = str(row.get('img_back_path', ''))
+                            
+                            # Check if images actually exist
+                            front_exists = front_path and front_path != 'nan' and os.path.exists(front_path)
+                            back_exists = back_path and back_path != 'nan' and os.path.exists(back_path)
+                            
+                            if front_exists or back_exists:
+                                successful += 1
+                            else:
+                                failed += 1
+                    except (ValueError, TypeError):
+                        continue
+                
+                # If we got results from CSV, use them
+                if successful + failed > 0:
+                    self.after(0, lambda: self._update_progress(expected_total, expected_total, successful, failed))
+                    self.after(0, lambda: self._log_message(f"Final results: {successful} successful, {failed} failed out of {expected_total} total checks"))
+                    return
+        except Exception as e:
+            self.after(0, lambda: self._log_message(f"Could not read CSV for final count: {e}"))
+        
+        # Fallback: Count by scanning image files
         for check_num in range(start_check, end_check + 1):
             front_exists = False
             back_exists = False

@@ -54,16 +54,38 @@ def initialize_session(p, user_data_dir: str, account_name_contains: str) -> tup
         )
 
         print("⏳ Waiting for manual login and 2FA completion...")
-        try:
-            page.wait_for_url(
-                "https://secure.chase.com/web/auth/dashboard#/dashboard/*")
-            print("✅ Login and 2FA completed successfully!")
-            page.wait_for_load_state("networkidle")
-        except PlaywrightTimeoutError:
-            print("⚠️ Timeout waiting for login and 2FA. Please ensure login is completed within 5 minutes.")
-            return None, None
-        except Exception as e:
-            print(f"⚠️ Error during login: {e}")
+        print("💡 Take your time - no timeout limit. Complete login and 2FA when ready.")
+        
+        # Wait indefinitely for login completion
+        max_attempts = 1000  # Very high number to effectively remove timeout
+        attempt = 0
+        
+        while attempt < max_attempts:
+            try:
+                # Check if we're on the dashboard (logged in)
+                current_url = page.url
+                if "dashboard" in current_url.lower() or "account" in current_url.lower():
+                    print("✅ Login and 2FA completed successfully!")
+                    page.wait_for_load_state("networkidle", timeout=10000)
+                    break
+                
+                # Wait a bit and check again
+                page.wait_for_timeout(2000)  # Wait 2 seconds
+                attempt += 1
+                
+                # Show progress every 30 seconds
+                if attempt % 15 == 0:
+                    print(f"⏳ Still waiting for login... ({attempt * 2} seconds elapsed)")
+                    
+            except Exception as e:
+                # If there's an error, wait a bit and try again
+                page.wait_for_timeout(2000)
+                attempt += 1
+                if attempt % 15 == 0:
+                    print(f"⏳ Waiting for login... ({attempt * 2} seconds elapsed)")
+        
+        if attempt >= max_attempts:
+            print("⚠️ Login process took too long. Please try again.")
             return None, None
 
         # Detect bank from current URL
@@ -101,6 +123,7 @@ def initialize_session(p, user_data_dir: str, account_name_contains: str) -> tup
                 context.close()
             except Exception:
                 pass
+        print("💡 Please check your internet connection and try again.")
         return None, None
 
 
@@ -220,12 +243,15 @@ def main(account_name_contains: str = "CHECKING", parsed_csv_path: str = None):
 
                     # Close current context and reinitialize
                     try:
-                        context.close()
+                        if context:
+                            context.close()
                     except Exception as e:
                         print(f"⚠️ Error closing context: {e}")
+                    
+                    print("🔄 Reinitializing session...")
                     context, page = initialize_session(p, user_data_dir, account_name_contains)
                     if not context or not page:
-                        print("⚠️ Failed to reinitialize session. Exiting.")
+                        print("⚠️ Failed to reinitialize session. Please check your login and try again.")
                         return
                     session_start_time = time.time()  # Reset session start time
 
@@ -436,7 +462,8 @@ def main(account_name_contains: str = "CHECKING", parsed_csv_path: str = None):
             # Always attempt a final save of CSV before closing context
             save_df_safely()
             try:
-                context.close()
+                if context:
+                    context.close()
             except Exception as e:
                 print(f"⚠️ Error closing context: {e}")
 
