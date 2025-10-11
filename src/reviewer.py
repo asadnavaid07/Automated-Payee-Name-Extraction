@@ -86,7 +86,11 @@ def main() -> None:
     if account_filter:
         view_df = view_df[view_df['bank'].astype(str).str.contains(account_filter, case=False, na=False)]
 
-    st.subheader(f"Rows to review: {len(view_df)}")
+    st.subheader(f"Review {len(view_df)} checks")
+    
+    # Simple help text
+    if len(view_df) > 0:
+        st.info("💡 Review each check below. Compare the extracted payee name with the check image and adjust if needed.")
 
     if len(view_df) == 0:
         st.success("No rows to review at current threshold.")
@@ -96,76 +100,80 @@ def main() -> None:
 
     for idx, row in view_df.iterrows():
         check_num = row.get('check_number', '') or row.get('Check Number', '')
-        with st.expander(f"Check {check_num} – confidence={row.get('confidence', 0):.2f}"):
-            cols = st.columns([2, 3])
-            with cols[0]:
-                front_path = row.get('img_front_path', '')
-                back_path = row.get('img_back_path', '')
+        confidence = row.get('confidence', 0)
+        
+        # Simple expander title
+        if confidence < 0.5:
+            expander_title = f"Check {check_num} (Needs Review - {confidence:.1%})"
+        else:
+            expander_title = f"Check {check_num} ({confidence:.1%})"
+        
+        with st.expander(expander_title, expanded=confidence < 0.5):
+            # Images section - clean and simple
+            front_path = row.get('img_front_path', '')
+            back_path = row.get('img_back_path', '')
+            
+            # Ensure paths are strings and not NaN/float
+            front_path = str(front_path) if pd.notna(front_path) and front_path != '' else ''
+            back_path = str(back_path) if pd.notna(back_path) and back_path != '' else ''
+            
+            # Display images side by side
+            if (front_path and os.path.exists(front_path)) or (back_path and os.path.exists(back_path)):
+                image_cols = st.columns(2)
                 
-                # Ensure paths are strings and not NaN/float
-                front_path = str(front_path) if pd.notna(front_path) and front_path != '' else ''
-                back_path = str(back_path) if pd.notna(back_path) and back_path != '' else ''
+                with image_cols[0]:
+                    if front_path and os.path.exists(front_path):
+                        st.image(front_path, caption="Front", use_column_width=True)
+                    else:
+                        st.text("Front image not available")
                 
-                if front_path and os.path.exists(front_path):
-                    st.image(front_path, caption="Front", use_column_width=True)
-                if back_path and os.path.exists(back_path):
-                    st.image(back_path, caption="Back", use_column_width=True)
-
-            with cols[1]:
-                current_payee = str(row.get('payee_name', ''))
-                new_payee = st.text_input("Payee name", value=current_payee, key=f"payee_{idx}")
-                new_conf = st.slider("Confidence", 0.0, 1.0, float(row.get('confidence', 0.0)), 0.01, key=f"conf_{idx}")
+                with image_cols[1]:
+                    if back_path and os.path.exists(back_path):
+                        st.image(back_path, caption="Back", use_column_width=True)
+                    else:
+                        st.text("Back image not available")
+            else:
+                st.warning("No check images available")
+            
+            # Simple form
+            current_payee = str(row.get('payee_name', ''))
+            new_payee = st.text_input("Payee Name", value=current_payee, key=f"payee_{idx}")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                new_conf = st.slider("Confidence", 0.0, 1.0, float(confidence), 0.01, key=f"conf_{idx}")
+            with col2:
                 new_source = st.selectbox("Source", options=["ocr", "api", "manual"], index=2, key=f"src_{idx}")
 
-                if st.button("Save row", key=f"save_{idx}"):
-                    df.at[idx, 'payee_name'] = new_payee
-                    df.at[idx, 'confidence'] = new_conf
-                    df.at[idx, 'source'] = new_source
-                    edited_rows += 1
-                    st.success("Saved.")
+            if st.button("Save", key=f"save_{idx}"):
+                df.at[idx, 'payee_name'] = new_payee
+                df.at[idx, 'confidence'] = new_conf
+                df.at[idx, 'source'] = new_source
+                edited_rows += 1
+                st.success("Saved!")
+                st.rerun()
 
     st.markdown("---")
     
-    # Single download section
-    st.subheader("Download & Save")
-    
-    col1, col2, col3 = st.columns(3)
+    # Simple download section
+    col1, col2 = st.columns(2)
     
     with col1:
-        # Single download button for the current CSV
         st.download_button(
-            label="📥 Download Final CSV",
+            label="Download CSV",
             data=df.to_csv(index=False).encode('utf-8'),
             file_name="statement_final.csv",
-            mime="text/csv",
-            help="Download the current CSV with all your changes"
+            mime="text/csv"
         )
     
     with col2:
-        # Save to original file if it exists
         if parsed_csv_path and os.path.exists(parsed_csv_path):
-            if st.button("💾 Save to Original File", help="Save changes back to the original CSV file"):
+            if st.button("Save to Original File"):
                 try:
                     df.to_csv(parsed_csv_path, index=False)
-                    st.success(f"✅ Saved changes to {parsed_csv_path}")
+                    st.success("Saved!")
                 except Exception as e:
-                    st.error(f"❌ Error: {str(e)}")
-        else:
-            st.info("No original file to save to")
-    
-    with col3:
-        # Save to out directory
-        if st.button("📁 Save to Out Folder", help="Save a copy to the out/ directory"):
-            try:
-                base_dir = os.getcwd()
-                out_dir = os.path.join(base_dir, 'out')
-                os.makedirs(out_dir, exist_ok=True)
-                file_name = "statement_final.csv"
-                out_path = os.path.join(out_dir, file_name)
-                df.to_csv(out_path, index=False)
-                st.success(f"✅ Saved to {out_path}")
-            except Exception as e:
-                st.error(f"❌ Error: {str(e)}")
+                    st.error(f"Error: {str(e)}")
 
 
 if __name__ == "__main__":
