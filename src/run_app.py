@@ -307,6 +307,13 @@ class DesktopApp(tk.Tk):
             expected_total = end_check - start_check + 1
             self.after(0, lambda: self._update_progress(0, expected_total, 0, 0))
             
+            # Start progress monitoring thread
+            progress_thread = threading.Thread(
+                target=lambda: self._monitor_progress_simple(start_check, end_check),
+                daemon=True
+            )
+            progress_thread.start()
+            
             # Run the actual image fetching
             fetch_images_main(start_check=start_check, end_check=end_check, parsed_csv_path=parsed_csv_path)
             
@@ -368,6 +375,48 @@ class DesktopApp(tk.Tk):
         finally:
             self.after(0, lambda: self.status_var.set("Ready"))
 
+    def _monitor_progress_simple(self, start_check: int, end_check: int) -> None:
+        """Simple progress monitoring that checks for new images and session timeout"""
+        import time
+        import os
+        
+        expected_total = end_check - start_check + 1
+        session_start_time = time.time()
+        last_image_count = 0
+        
+        while True:
+            time.sleep(5)  # Check every 5 seconds
+            
+            # Count current images
+            current_images = set()
+            if os.path.exists("data/images"):
+                for root, dirs, files in os.walk("data/images"):
+                    for file in files:
+                        if file.startswith("check_") and file.endswith(".png"):
+                            current_images.add(file)
+            
+            # Update progress based on image count
+            current_count = len(current_images)
+            if current_count > last_image_count:
+                # Estimate progress (rough approximation)
+                estimated_processed = min(current_count // 2, expected_total)  # Each check has 2 images
+                estimated_successful = current_count // 2
+                estimated_failed = max(0, estimated_processed - estimated_successful)
+                
+                self.after(0, lambda: self._update_progress(estimated_processed, expected_total, estimated_successful, estimated_failed))
+                self.after(0, lambda: self._log_message(f"Progress update: {estimated_processed}/{expected_total} processed, {estimated_successful} successful, {estimated_failed} failed"))
+                last_image_count = current_count
+            
+            # Check for session timeout (30 minutes)
+            elapsed_time = time.time() - session_start_time
+            if elapsed_time > 1800:  # 30 minutes
+                self.after(0, lambda: self._update_login_status(True, "Session expired after 30 minutes - re-login required"))
+                self.after(0, lambda: self._log_message("⚠️ Session timeout detected - you may need to re-login"))
+                session_start_time = time.time()  # Reset timer
+            
+            # Break if we've processed everything (rough estimate)
+            if current_count >= expected_total * 2:  # 2 images per check
+                break
 
     def _monitor_progress(self, start_check: int, end_check: int, parsed_csv_path: str) -> None:
         """Monitor progress by checking for new images and updating UI accordingly"""
