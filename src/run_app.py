@@ -382,10 +382,20 @@ class DesktopApp(tk.Tk):
         
         expected_total = end_check - start_check + 1
         session_start_time = time.time()
-        last_image_count = 0
+        last_processed_count = 0
+        last_successful_count = 0
+        last_failed_count = 0
+        
+        # Get initial image count to track only new images
+        initial_images = set()
+        if os.path.exists("data/images"):
+            for root, dirs, files in os.walk("data/images"):
+                for file in files:
+                    if file.startswith("check_") and file.endswith(".png"):
+                        initial_images.add(file)
         
         while True:
-            time.sleep(5)  # Check every 5 seconds
+            time.sleep(3)  # Check every 3 seconds
             
             # Count current images
             current_images = set()
@@ -395,17 +405,49 @@ class DesktopApp(tk.Tk):
                         if file.startswith("check_") and file.endswith(".png"):
                             current_images.add(file)
             
-            # Update progress based on image count
-            current_count = len(current_images)
-            if current_count > last_image_count:
-                # Estimate progress (rough approximation)
-                estimated_processed = min(current_count // 2, expected_total)  # Each check has 2 images
-                estimated_successful = current_count // 2
-                estimated_failed = max(0, estimated_processed - estimated_successful)
-                
-                self.after(0, lambda: self._update_progress(estimated_processed, expected_total, estimated_successful, estimated_failed))
-                self.after(0, lambda: self._log_message(f"Progress update: {estimated_processed}/{expected_total} processed, {estimated_successful} successful, {estimated_failed} failed"))
-                last_image_count = current_count
+            # Only count NEW images created during this session
+            new_images = current_images - initial_images
+            new_image_count = len(new_images)
+            
+            # Count successful checks (pairs of front/back images)
+            successful_checks = 0
+            failed_checks = 0
+            
+            # Group images by check number
+            check_images = {}
+            for img in new_images:
+                # Extract check number from filename like "check_1234_front.png"
+                try:
+                    parts = img.split('_')
+                    if len(parts) >= 2:
+                        check_num = int(parts[1])
+                        if start_check <= check_num <= end_check:
+                            if check_num not in check_images:
+                                check_images[check_num] = {'front': False, 'back': False}
+                            
+                            if 'front' in img:
+                                check_images[check_num]['front'] = True
+                            elif 'back' in img:
+                                check_images[check_num]['back'] = True
+                except:
+                    continue
+            
+            # Count successful and failed checks
+            for check_num, images in check_images.items():
+                if images['front'] and images['back']:
+                    successful_checks += 1
+                elif images['front'] or images['back']:
+                    # Partial success - count as failed for now
+                    failed_checks += 1
+            
+            # Update progress if there are changes
+            if successful_checks != last_successful_count or failed_checks != last_failed_count:
+                processed_checks = successful_checks + failed_checks
+                self.after(0, lambda: self._update_progress(processed_checks, expected_total, successful_checks, failed_checks))
+                self.after(0, lambda: self._log_message(f"Progress update: {processed_checks}/{expected_total} processed, {successful_checks} successful, {failed_checks} failed"))
+                last_processed_count = processed_checks
+                last_successful_count = successful_checks
+                last_failed_count = failed_checks
             
             # Check for session timeout (30 minutes)
             elapsed_time = time.time() - session_start_time
@@ -414,8 +456,14 @@ class DesktopApp(tk.Tk):
                 self.after(0, lambda: self._log_message("⚠️ Session timeout detected - you may need to re-login"))
                 session_start_time = time.time()  # Reset timer
             
-            # Break if we've processed everything (rough estimate)
-            if current_count >= expected_total * 2:  # 2 images per check
+            # Check for re-login indicators by looking at recent log files or patterns
+            # If no progress for 5 minutes and we're not at the end, suggest re-login
+            if elapsed_time > 300 and processed_checks == 0:  # 5 minutes with no progress
+                self.after(0, lambda: self._update_login_status(True, "No progress detected - re-login may be required"))
+                self.after(0, lambda: self._log_message("⚠️ No progress detected for 5 minutes - you may need to re-login"))
+            
+            # Break if we've processed everything
+            if processed_checks >= expected_total:
                 break
 
     def _monitor_progress(self, start_check: int, end_check: int, parsed_csv_path: str) -> None:

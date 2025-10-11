@@ -65,7 +65,7 @@ def initialize_session(p, user_data_dir: str, account_name_contains: str) -> tup
                 # Check if we're on the dashboard (logged in)
                 current_url = page.url
                 if "dashboard" in current_url.lower() or "account" in current_url.lower():
-                    print("✅ Login and 2FA completed successfully!")
+            print("✅ Login and 2FA completed successfully!")
                     page.wait_for_load_state("networkidle", timeout=10000)
                     break
                 
@@ -77,7 +77,7 @@ def initialize_session(p, user_data_dir: str, account_name_contains: str) -> tup
                 if attempt % 15 == 0:
                     print(f"⏳ Still waiting for login... ({attempt * 2} seconds elapsed)")
                     
-            except Exception as e:
+        except Exception as e:
                 # If there's an error, wait a bit and try again
                 page.wait_for_timeout(2000)
                 attempt += 1
@@ -107,20 +107,20 @@ def initialize_session(p, user_data_dir: str, account_name_contains: str) -> tup
             return None, None
 
         # Open search activity panel
-        try:
-            page.get_by_test_id("quick-action-search-activity-tooltip-button").wait_for(state="visible", timeout=10000)
-            page.get_by_test_id("quick-action-search-activity-tooltip-button").click()
-            page.wait_for_timeout(2000)
+            try:
+                page.get_by_test_id("quick-action-search-activity-tooltip-button").wait_for(state="visible", timeout=10000)
+                page.get_by_test_id("quick-action-search-activity-tooltip-button").click()
+                page.wait_for_timeout(2000)
             return context, page
-        except Exception as e:
-            print(f"⚠️ Could not open search activity panel: {e}")
+            except Exception as e:
+                print(f"⚠️ Could not open search activity panel: {e}")
             return None, None
 
     except Exception as e:
         print(f"⚠️ Failed to initialize session: {e}")
         if context:
             try:
-                context.close()
+            context.close()
             except Exception:
                 pass
         print("💡 Please check your internet connection and try again.")
@@ -286,8 +286,8 @@ def main(account_name_contains: str = "CHECKING", parsed_csv_path: str = None):
                         to_input = page.get_by_test_id("check-to").get_by_role("textbox", name="To")
 
                         try:
-                            from_input.wait_for(state="visible", timeout=15000)
-                            to_input.wait_for(state="visible", timeout=15000)
+                        from_input.wait_for(state="visible", timeout=15000)
+                        to_input.wait_for(state="visible", timeout=15000)
                         except PlaywrightTimeoutError:
                             print("⚠️ Input fields not visible.")
                             continue
@@ -299,9 +299,9 @@ def main(account_name_contains: str = "CHECKING", parsed_csv_path: str = None):
                         to_input.fill(check_number)
 
                         try:
-                            page.get_by_test_id("submit").click()
-                            page.wait_for_load_state("networkidle", timeout=30000)
-                            page.wait_for_timeout(2000)  # Increased delay for table loading
+                        page.get_by_test_id("submit").click()
+                        page.wait_for_load_state("networkidle", timeout=30000)
+                        page.wait_for_timeout(2000)  # Increased delay for table loading
                         except PlaywrightTimeoutError:
                             print("⚠️ Submit button or page load failed.")
                             continue
@@ -390,11 +390,11 @@ def main(account_name_contains: str = "CHECKING", parsed_csv_path: str = None):
                     if df is not None and (front_path or back_path):
                         try:
                             df.at[idx, 'bank'] = _infer_bank_from_url(page.url)
-                            if front_path:
+                                    if front_path:
                                 df.at[idx, 'img_front_path'] = front_path
-                            if back_path:
+                                    if back_path:
                                 df.at[idx, 'img_back_path'] = back_path
-                            df.to_csv(parsed_csv_path, index=False)
+                                    df.to_csv(parsed_csv_path, index=False)
                             print(f"📝 Updated CSV for check {check_number} (row {idx+1})")
                         except Exception as e:
                             print(f"⚠️ Failed to update CSV for check {check_number} (row {idx+1}): {e}")
