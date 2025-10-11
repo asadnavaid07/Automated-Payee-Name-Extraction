@@ -384,31 +384,34 @@ class DesktopApp(tk.Tk):
         successful = 0
         failed = 0
         
-        # Get initial state
+        # Get initial state - look in all subdirectories including date folders
         initial_images = set()
         if os.path.exists("data/images"):
             for root, dirs, files in os.walk("data/images"):
                 for file in files:
                     if file.startswith("check_") and file.endswith(".png"):
-                        initial_images.add(file)
+                        # Store full path to avoid conflicts
+                        full_path = os.path.join(root, file)
+                        initial_images.add(full_path)
         
         last_update = time.time()
         
         while processed < expected_total:
             time.sleep(2)  # Check every 2 seconds
             
-            # Count current images
+            # Count current images - look in all subdirectories
             current_images = set()
             if os.path.exists("data/images"):
                 for root, dirs, files in os.walk("data/images"):
                     for file in files:
                         if file.startswith("check_") and file.endswith(".png"):
-                            current_images.add(file)
+                            full_path = os.path.join(root, file)
+                            current_images.add(full_path)
             
             # Count new images since start
             new_images = current_images - initial_images
             
-            # Count successful checks (those with both front and back images)
+            # Count successful checks (those with front or back images)
             successful_checks = 0
             for check_num in range(start_check, end_check + 1):
                 front_exists = any(f"check_{check_num}_front" in img for img in new_images)
@@ -439,29 +442,22 @@ class DesktopApp(tk.Tk):
         successful = 0
         failed = 0
         
-        # Count actual results
+        # Count actual results by scanning all subdirectories
         for check_num in range(start_check, end_check + 1):
             front_exists = False
             back_exists = False
             
-            # Check for front image
+            # Check for front and back images in all subdirectories
             if os.path.exists("data/images"):
                 for root, dirs, files in os.walk("data/images"):
                     for file in files:
-                        if f"check_{check_num}_front" in file and file.endswith(".png"):
+                        if file.startswith(f"check_{check_num}_front") and file.endswith(".png"):
                             front_exists = True
-                            break
-                    if front_exists:
-                        break
-            
-            # Check for back image
-            if os.path.exists("data/images"):
-                for root, dirs, files in os.walk("data/images"):
-                    for file in files:
-                        if f"check_{check_num}_back" in file and file.endswith(".png"):
+                        elif file.startswith(f"check_{check_num}_back") and file.endswith(".png"):
                             back_exists = True
-                            break
-                    if back_exists:
+                    
+                    # Break early if both found
+                    if front_exists and back_exists:
                         break
             
             if front_exists or back_exists:
