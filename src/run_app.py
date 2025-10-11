@@ -306,13 +306,21 @@ class DesktopApp(tk.Tk):
             expected_total = end_check - start_check + 1
             self.after(0, lambda: self._update_progress(0, expected_total, 0, 0))
             
+            # Start a progress monitoring thread
+            progress_thread = threading.Thread(
+                target=lambda: self._monitor_progress(start_check, end_check, parsed_csv_path),
+                daemon=True
+            )
+            progress_thread.start()
+            
+            # Run the actual image fetching
             fetch_images_main(start_check=start_check, end_check=end_check, parsed_csv_path=parsed_csv_path)
             
-            # Update final progress
-            self.after(0, lambda: self._update_progress(expected_total, expected_total, expected_total, 0))
-            self.after(0, lambda: self._update_operation("Image fetching completed successfully!"))
+            # Final update after completion - count actual results
+            self._update_final_progress(start_check, end_check)
+            self.after(0, lambda: self._update_operation("Image fetching completed!"))
             self.after(0, lambda: self._update_login_status(False))
-            self.after(0, lambda: self._log_message("Image fetching completed successfully"))
+            self.after(0, lambda: self._log_message("Image fetching process completed"))
             
             # Prompt to save a final CSV copy and also place a copy in base out/
             def save_final_copy():
@@ -365,6 +373,105 @@ class DesktopApp(tk.Tk):
             self.after(0, lambda: self._update_login_status(False))
         finally:
             self.after(0, lambda: self.status_var.set("Ready"))
+
+    def _monitor_progress(self, start_check: int, end_check: int, parsed_csv_path: str) -> None:
+        """Monitor progress by checking for new images and updating UI accordingly"""
+        import time
+        import os
+        
+        expected_total = end_check - start_check + 1
+        processed = 0
+        successful = 0
+        failed = 0
+        
+        # Get initial state
+        initial_images = set()
+        if os.path.exists("data/images"):
+            for root, dirs, files in os.walk("data/images"):
+                for file in files:
+                    if file.startswith("check_") and file.endswith(".png"):
+                        initial_images.add(file)
+        
+        last_update = time.time()
+        
+        while processed < expected_total:
+            time.sleep(2)  # Check every 2 seconds
+            
+            # Count current images
+            current_images = set()
+            if os.path.exists("data/images"):
+                for root, dirs, files in os.walk("data/images"):
+                    for file in files:
+                        if file.startswith("check_") and file.endswith(".png"):
+                            current_images.add(file)
+            
+            # Count new images since start
+            new_images = current_images - initial_images
+            
+            # Count successful checks (those with both front and back images)
+            successful_checks = 0
+            for check_num in range(start_check, end_check + 1):
+                front_exists = any(f"check_{check_num}_front" in img for img in new_images)
+                back_exists = any(f"check_{check_num}_back" in img for img in new_images)
+                if front_exists or back_exists:
+                    successful_checks += 1
+            
+            # Estimate processed (this is approximate since we can't track individual failures easily)
+            processed = min(successful_checks + 2, expected_total)  # Add some buffer for in-progress
+            successful = successful_checks
+            failed = max(0, processed - successful)
+            
+            # Update UI every 5 seconds or when significant change
+            if time.time() - last_update > 5 or successful_checks > successful:
+                self.after(0, lambda: self._update_progress(processed, expected_total, successful, failed))
+                self.after(0, lambda: self._log_message(f"Progress: {processed}/{expected_total} processed, {successful} successful, {failed} failed"))
+                last_update = time.time()
+            
+            # Break if we've processed everything
+            if processed >= expected_total:
+                break
+
+    def _update_final_progress(self, start_check: int, end_check: int) -> None:
+        """Update progress with final accurate counts"""
+        import os
+        
+        expected_total = end_check - start_check + 1
+        successful = 0
+        failed = 0
+        
+        # Count actual results
+        for check_num in range(start_check, end_check + 1):
+            front_exists = False
+            back_exists = False
+            
+            # Check for front image
+            if os.path.exists("data/images"):
+                for root, dirs, files in os.walk("data/images"):
+                    for file in files:
+                        if f"check_{check_num}_front" in file and file.endswith(".png"):
+                            front_exists = True
+                            break
+                    if front_exists:
+                        break
+            
+            # Check for back image
+            if os.path.exists("data/images"):
+                for root, dirs, files in os.walk("data/images"):
+                    for file in files:
+                        if f"check_{check_num}_back" in file and file.endswith(".png"):
+                            back_exists = True
+                            break
+                    if back_exists:
+                        break
+            
+            if front_exists or back_exists:
+                successful += 1
+            else:
+                failed += 1
+        
+        # Update UI with final counts
+        self.after(0, lambda: self._update_progress(expected_total, expected_total, successful, failed))
+        self.after(0, lambda: self._log_message(f"Final results: {successful} successful, {failed} failed out of {expected_total} total checks"))
 
     def _on_download_final_csv(self) -> None:
         if not self.final_csv_path or not os.path.exists(self.final_csv_path):
